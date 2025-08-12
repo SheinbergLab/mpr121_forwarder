@@ -271,6 +271,37 @@ public:
         return connected.load();
     }
     
+    bool testConnection() {
+        if (!connected.load() || sockfd < 0) {
+            return false;
+        }
+        
+        // Use recv with MSG_PEEK and MSG_DONTWAIT to test if socket is still alive
+        char test_buf[1];
+        int result = recv(sockfd, test_buf, 1, MSG_PEEK | MSG_DONTWAIT);
+        
+        if (result == 0) {
+            // Connection closed by remote host
+            std::cerr << "Connection closed by remote host" << std::endl;
+            connected.store(false);
+            disconnect();
+            return false;
+        } else if (result < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // No data available, but connection is still alive
+                return true;
+            } else {
+                // Real error occurred
+                std::cerr << "Connection test failed: " << strerror(errno) << std::endl;
+                connected.store(false);
+                disconnect();
+                return false;
+            }
+        }
+        
+        return true; // Connection is good
+    }
+    
     bool writeToDataserver(const char* varname, int dtype, int len, void* data) {
         if (!connected.load()) {
             return false;
@@ -501,7 +532,7 @@ int main(int argc, char* argv[]) {
         // Check touch status changes
         uint16_t curr_touched0 = cap0.touched();
         if (curr_touched0 != last_touched0) {
-            if (client.isConnected()) {
+            if (client.isConnected() && client.testConnection()) {
                 client.writeToDataserver(sensor0_touched_point, DSERV_SHORT, 
                                        sizeof(uint16_t), &curr_touched0);
             }
@@ -510,15 +541,15 @@ int main(int argc, char* argv[]) {
         
         uint16_t curr_touched1 = cap1.touched();
         if (curr_touched1 != last_touched1) {
-            if (client.isConnected()) {
+            if (client.isConnected() && client.testConnection()) {
                 client.writeToDataserver(sensor1_touched_point, DSERV_SHORT,
                                        sizeof(uint16_t), &curr_touched1);
             }
             last_touched1 = curr_touched1;
         }
         
-        // Send filtered data periodically
-        if (client.isConnected()) {
+        // Send filtered data periodically (and test connection)
+        if (client.testConnection()) {
             uint16_t filtered_data[NSENSORS];
             
             // Get sensor 0 data
