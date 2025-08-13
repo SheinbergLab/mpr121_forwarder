@@ -62,26 +62,26 @@ public:
     
     ~MPR121() {
         if (i2c_fd >= 0) {
-            close(i2c_fd);
+	  close(i2c_fd);
         }
     }
+  
+  bool begin(const char* i2c_device = "/dev/i2c-1") {
+    // Open I2C device
+    i2c_fd = open(i2c_device, O_RDWR);
+    if (i2c_fd < 0) {
+      std::cerr << "Failed to open I2C device: " << i2c_device << std::endl;
+      return false;
+    }
     
-    bool begin(const char* i2c_device = "/dev/i2c-1") {
-        // Open I2C device
-        i2c_fd = open(i2c_device, O_RDWR);
-        if (i2c_fd < 0) {
-            std::cerr << "Failed to open I2C device: " << i2c_device << std::endl;
-            return false;
-        }
-        
-        // Set I2C slave address
-        if (ioctl(i2c_fd, I2C_SLAVE, i2c_addr) < 0) {
-            std::cerr << "Failed to set I2C slave address: 0x" << std::hex << i2c_addr << std::endl;
-            close(i2c_fd);
-            i2c_fd = -1;
-            return false;
-        }
-
+    // Set I2C slave address
+    if (ioctl(i2c_fd, I2C_SLAVE, i2c_addr) < 0) {
+      std::cerr << "Failed to set I2C slave address: 0x" << std::hex << i2c_addr << std::endl;
+      close(i2c_fd);
+      i2c_fd = -1;
+      return false;
+    }
+    
     // Configure the mpr121 chip (mostly) as recommended in the AN3944 MPR121
     // Quick Start Guide
     // First, turn off all electrodes by zeroing out the Electrode Configuration
@@ -89,22 +89,22 @@ public:
     // If this one fails, it's unlikely any of the others will succeed.
     writeRegister(0x5e, 0x00);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-       
+    
     // Section A // AN3891
     // Filtering when data is greater than baseline
     // regs 0x2b-0x2e
     //    uint8_t sectA[] = {0x01, 0x01, 0x01, 0x01}; // original
     uint8_t sectA[] = {0x00, 0x00, 0x00, 0x00}; // AN3891
     for (int i = 0; i < (int) sizeof(sectA); i++)
-		writeRegister(0x2b+i, sectA[i]);
+      writeRegister(0x2b+i, sectA[i]);
     
     // Section B // AN3891
     // Filtering when data is less than baseline
     // regs 0x2f-0x32
-	//    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
+    //    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
     uint8_t sectB[] = {0x00, 0x00, 0x00, 0x00};
     for (int i = 0; i < (int) sizeof(sectB); i++)
-		writeRegister(0x2f+i, sectB[i]);
+      writeRegister(0x2f+i, sectB[i]);
     
     // Section C
     // Touch Threshold/Release registers, ELE0-ELE11
@@ -123,7 +123,7 @@ public:
 			0x0f, 0x0a,
 			0x0f, 0x0a};
     for (int i = 0; i < (int) sizeof(sectC); i++)
-    	writeRegister(0x41+i, sectC[i]);
+      writeRegister(0x41+i, sectC[i]);
     
     // Filter configuration (added)
     // reg 0x5c
@@ -150,7 +150,7 @@ public:
     // Autoconfiguration target settings
     uint8_t sectF1[] = {0x9c, 0x65, 0x8c};
     for (int i = 0; i < (int) sizeof(sectF1); i++)
-	    writeRegister(0x7d+i, sectF1[i]);
+      writeRegister(0x7d+i, sectF1[i]);
     
     // Section E - this one must be set last, and switches to run mode
     // Enable the first 6 electrodes
@@ -160,60 +160,63 @@ public:
     
     // Settle time
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    
-    uint16_t touched() {
-        uint8_t t = readRegister8(MPR121_TOUCHSTATUS_L);
-        uint16_t v = readRegister8(MPR121_TOUCHSTATUS_H);
-        return ((v << 8) | t);
-    }
-    
-    uint16_t filteredData(uint8_t t) {
-        if (t > 12) return 0;
-        return readRegister16(MPR121_FILTDATA_0L + t * 2);
-    }
-    
-    uint16_t rawData(uint8_t t) {
-        if (t > 12) return 0;
-        return readRegister16(MPR121_ELEDATA_0L + t * 2);
-    }
-    
+
+    return true;
+  }
+  
+  uint16_t touched() {
+    uint8_t t = readRegister8(MPR121_TOUCHSTATUS_L);
+    uint16_t v = readRegister8(MPR121_TOUCHSTATUS_H);
+    return ((v << 8) | t);
+  }
+  
+  uint16_t filteredData(uint8_t t) {
+    if (t > 12) return 0;
+    return readRegister16(MPR121_FILTDATA_0L + t * 2);
+  }
+  
+  uint16_t rawData(uint8_t t) {
+    if (t > 12) return 0;
+    return readRegister16(MPR121_ELEDATA_0L + t * 2);
+  }
+  
 private:
-    void writeRegister(uint8_t reg, uint8_t value) {
-        uint8_t buffer[2] = {reg, value};
-        if (write(i2c_fd, buffer, 2) != 2) {
-            std::cerr << "Failed to write to register 0x" << std::hex << (int)reg << std::endl;
-        }
+  void writeRegister(uint8_t reg, uint8_t value) {
+    uint8_t buffer[2] = {reg, value};
+    if (write(i2c_fd, buffer, 2) != 2) {
+      std::cerr << "Failed to write to register 0x" << std::hex << (int)reg << std::endl;
+    }
+  }
+  
+  uint8_t readRegister8(uint8_t reg) {
+    if (write(i2c_fd, &reg, 1) != 1) {
+      std::cerr << "Failed to write register address" << std::endl;
+      return 0;
     }
     
-    uint8_t readRegister8(uint8_t reg) {
-        if (write(i2c_fd, &reg, 1) != 1) {
-            std::cerr << "Failed to write register address" << std::endl;
-            return 0;
-        }
-        
-        uint8_t value;
-        if (read(i2c_fd, &value, 1) != 1) {
-            std::cerr << "Failed to read register" << std::endl;
-            return 0;
-        }
-        
-        return value;
+    uint8_t value;
+    if (read(i2c_fd, &value, 1) != 1) {
+      std::cerr << "Failed to read register" << std::endl;
+      return 0;
     }
     
-    uint16_t readRegister16(uint8_t reg) {
-        if (write(i2c_fd, &reg, 1) != 1) {
-            std::cerr << "Failed to write register address" << std::endl;
-            return 0;
-        }
-        
-        uint8_t buffer[2];
-        if (read(i2c_fd, buffer, 2) != 2) {
-            std::cerr << "Failed to read register" << std::endl;
-            return 0;
-        }
-        
-        return (buffer[1] << 8) | buffer[0];
+    return value;
+  }
+  
+  uint16_t readRegister16(uint8_t reg) {
+    if (write(i2c_fd, &reg, 1) != 1) {
+      std::cerr << "Failed to write register address" << std::endl;
+      return 0;
     }
+    
+    uint8_t buffer[2];
+    if (read(i2c_fd, buffer, 2) != 2) {
+      std::cerr << "Failed to read register" << std::endl;
+      return 0;
+    }
+    
+    return (buffer[1] << 8) | buffer[0];
+  }
 };
 
 class DataserverClient {
