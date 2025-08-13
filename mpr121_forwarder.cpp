@@ -84,6 +84,11 @@ public:
     
     // Configure the mpr121 chip (mostly) as recommended in the AN3944 MPR121
     // Quick Start Guide
+    
+    // Soft reset first
+    writeRegister(0x80, 0x63);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    
     // First, turn off all electrodes by zeroing out the Electrode Configuration
     // register.
     // If this one fails, it's unlikely any of the others will succeed.
@@ -94,7 +99,7 @@ public:
     // Filtering when data is greater than baseline
     // regs 0x2b-0x2e
     //    uint8_t sectA[] = {0x01, 0x01, 0x01, 0x01}; // original
-    uint8_t sectA[] = {0x00, 0x00, 0x00, 0x00}; // AN3891
+    uint8_t sectA[] = {0x01, 0x01, 0x00, 0x00}; // AN3891
     for (int i = 0; i < (int) sizeof(sectA); i++)
       writeRegister(0x2b+i, sectA[i]);
     
@@ -102,7 +107,7 @@ public:
     // Filtering when data is less than baseline
     // regs 0x2f-0x32
     //    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
-    uint8_t sectB[] = {0x00, 0x00, 0x00, 0x00};
+    uint8_t sectB[] = {0x01, 0x01, 0x01, 0x00};
     for (int i = 0; i < (int) sizeof(sectB); i++)
       writeRegister(0x2f+i, sectB[i]);
     
@@ -110,47 +115,34 @@ public:
     // Touch Threshold/Release registers, ELE0-ELE11
     // regs 0x41-0x58
     //                    __T_  __R_
-    uint8_t sectC[] =  {0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a};
+	 uint8_t sectC[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                        0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                        0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                        0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     for (int i = 0; i < (int) sizeof(sectC); i++)
       writeRegister(0x41+i, sectC[i]);
     
-    // Filter configuration (added)
-    // reg 0x5c
-    //      uint8_t filterConfc = 0x00; // 6 samples, disable electrode charging
-    uint8_t filterConfc = 0x50; // 10 samples, 16ua electrode charging
-    writeRegister(0x5c, filterConfc);
-    
+    // Proper charge settings for measurements
+    // reg 0x5c - Charge Discharge Time Configuration
+    writeRegister(0x5c, 0x10); // 1uA charging current, 0.5us charge time
+     
     // Section D
     // Filter configuration
     // reg 0x5d
     //    uint8_t filterConf = 0x04; //original
     //    uint8_t filterConf = 0x24; // default on data sheet
-    uint8_t filterConf = 0x41; // 1 us charge/discharge time, 4 samples for 2nd folter, 2ms sample interval
+    uint8_t filterConf = 0x20;
     //      uint8_t filterConf = 0x00; // no electrode charging, 4 samples for 2nd filter, 1 ms period
     writeRegister(0x5d, filterConf);
     
     // Section F
     // Autoconfiguration control registers
-    // regs 0x7b-0x7f
-    //    uint8_t sectF0 = 0x0b; // does autoconfig
-    uint8_t sectF0 = 0x08; //doesn't do autoconfig 
-    writeRegister(0x7b, sectF0);
-    
-    // Autoconfiguration target settings
-    uint8_t sectF1[] = {0x9c, 0x65, 0x8c};
-    for (int i = 0; i < (int) sizeof(sectF1); i++)
-      writeRegister(0x7d+i, sectF1[i]);
+    // Disable autoconfiguration completely
+    writeRegister(0x7b, 0x00);
+    writeRegister(0x7c, 0x00);
+    writeRegister(0x7d, 0x00); 
+    writeRegister(0x7e, 0x00);
+    writeRegister(0x7f, 0x00);
     
     // Section E - this one must be set last, and switches to run mode
     // Enable the first 6 electrodes
