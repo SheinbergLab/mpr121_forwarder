@@ -20,7 +20,7 @@
 
 #define DPOINT_BINARY_MSG_CHAR '>'
 #define DPOINT_BINARY_FIXED_LENGTH 128
-#define DEFAULT_TIMER_INTERVAL_MS 20
+#define DEFAULT_TIMER_INTERVAL_MS 200
 #define NSENSORS 6
 
 // MPR121 Constants
@@ -65,6 +65,21 @@ public:
         }
     }
     
+    // Add this debug function in the main loop, right after the filtered data reads:
+	void printDebugOutput(MPR121& sensor, int sensor_num) {
+		auto now = std::chrono::system_clock::now();
+		auto t = std::chrono::system_clock::to_time_t(now);
+		
+		std::cout << "Sensor[" << sensor_num << "] " 
+				  << std::put_time(std::localtime(&t), "%H:%M:%S") << " | ";
+		
+		for (int i = 0; i < NSENSORS; ++i) {
+			uint16_t value = sensor.filteredData(i);
+			std::cout << std::setw(4) << value << " ";
+		}
+		std::cout << " | touched: 0x" << std::hex << sensor.touched() << std::dec << std::endl;
+	}
+
     bool begin(const char* i2c_device = "/dev/i2c-1") {
 		// Open I2C device
 		i2c_fd = open(i2c_device, O_RDWR);
@@ -96,10 +111,6 @@ public:
 		
 		// Settle time
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-		
-		// Debug output
-		uint8_t ecr_val = readRegister8(0x5E);
-		std::cout << "ECR register: 0x" << std::hex << (int)ecr_val << std::endl;
 		
 		return true;
     }
@@ -560,6 +571,9 @@ int main(int argc, char* argv[]) {
             }
             client.writeToDataserver(sensor1_vals_point, DSERV_SHORT,
                                    NSENSORS * sizeof(uint16_t), filtered_data);
+                                   
+            printDebugOutput(cap0, 0);
+            printDebugOutput(cap1, 1);                       
         }
     }
     
