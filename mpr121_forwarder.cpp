@@ -5,6 +5,8 @@
 #include <atomic>
 #include <csignal>
 #include <unistd.h>
+#include <iomanip>
+#include <ctime>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/timerfd.h>
@@ -20,7 +22,7 @@
 
 #define DPOINT_BINARY_MSG_CHAR '>'
 #define DPOINT_BINARY_FIXED_LENGTH 128
-#define DEFAULT_TIMER_INTERVAL_MS 200
+#define DEFAULT_TIMER_INTERVAL_MS 20
 #define NSENSORS 6
 
 // MPR121 Constants
@@ -65,21 +67,6 @@ public:
         }
     }
     
-    // Add this debug function in the main loop, right after the filtered data reads:
-	void printDebugOutput(MPR121& sensor, int sensor_num) {
-		auto now = std::chrono::system_clock::now();
-		auto t = std::chrono::system_clock::to_time_t(now);
-		
-		std::cout << "Sensor[" << sensor_num << "] " 
-				  << std::put_time(std::localtime(&t), "%H:%M:%S") << " | ";
-		
-		for (int i = 0; i < NSENSORS; ++i) {
-			uint16_t value = sensor.filteredData(i);
-			std::cout << std::setw(4) << value << " ";
-		}
-		std::cout << " | touched: 0x" << std::hex << sensor.touched() << std::dec << std::endl;
-	}
-
     bool begin(const char* i2c_device = "/dev/i2c-1") {
 		// Open I2C device
 		i2c_fd = open(i2c_device, O_RDWR);
@@ -96,18 +83,24 @@ public:
 			return false;
 		}
 	
-		// Stop electrode scanning before config (same as your working script)
-		writeRegister(0x5E, 0x00);  // ECR register
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		// Stop electrode scanning before config
+		writeRegister(0x2B, 0x00);
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+		writeRegister(0x5E, 0x00);
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	
 		// Set touch/release thresholds for first 6 electrodes (same as your working script)
 		for (int i = 0; i < 6; ++i) {
 			writeRegister(0x41 + i * 2, 12);  // Touch threshold
 			writeRegister(0x42 + i * 2, 6);   // Release threshold
 		}
-	
-		// Enable first 6 electrodes (same as your working script, but only 6 instead of 12)
-		writeRegister(0x5E, 0x06);  // Enable 6 electrodes: 0x06 = 0b00000110
+
+		writeRegister(0x5E, 0x0C);
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		
+		// Enable first 6 electrodes 
+		writeRegister(0x2B, 0x06);
 		
 		// Settle time
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -163,6 +156,12 @@ private:
         
         return (buffer[1] << 8) | buffer[0];
     }
+public:
+  bool readRegisters(uint8_t startReg, uint8_t *buffer, size_t length) {
+    if (write(i2c_fd, &startReg, 1) != 1) return false;
+    return read(i2c_fd, buffer, length) == (ssize_t)length;
+  }
+  
 };
 
 class DataserverClient {
@@ -395,6 +394,76 @@ std::atomic<bool> running(true);
 MPR121 cap0(0x5A);
 MPR121 cap1(0x5B);
 
+// Add this debug function in the main loop, right after the filtered data reads:
+void printDebugOutput(MPR121& sensor, int sensor_num, uint16_t filtered_data[6])
+{
+  auto now = std::chrono::system_clock::now();
+  auto t = std::chrono::system_clock::to_time_t(now);
+  
+  std::cout << "Sensor[" << sensor_num << "] " 
+	    << std::put_time(std::localtime(&t), "%H:%M:%S") << " | ";
+  
+  for (int i = 0; i < NSENSORS; ++i) {
+    uint16_t value = filtered_data[i];
+    std::cout << std::setw(4) << value << " ";
+  }
+  std::cout << " | touched: 0x" << std::hex << sensor.touched() << std::dec << std::endl;
+}
+
+void dumpMPR121(int file) {
+    auto readBlock = [&](uint8_t start, size_t len, uint8_t *buf) -> bool {
+        if (write(file, &start, 1) != 1) return false;
+        return read(file, buf, len) == (ssize_t)len;
+    };
+
+    uint8_t buf[64];
+
+    // Touch Status
+    if (readBlock(0x00, 2, buf)) {
+        uint16_t status = buf[0] | (buf[1] << 8);
+        std::cout << "Touch Status (0x00–0x01): 0x" << std::hex << status << std::dec << "\n";
+        for (int i = 0; i < 12; ++i)
+            std::cout << "  Electrode " << i << ": " << ((status & (1 << i)) ? "Touched" : "Released") << "\n";
+    }
+
+    // Raw Electrode Data
+    if (readBlock(0x04, 24, buf)) {
+        std::cout << "\nRaw Electrode Data (0x04–0x1B):\n";
+        for (int i = 0; i < 12; ++i) {
+            uint16_t val = buf[i * 2] | (buf[i * 2 + 1] << 8);
+            std::cout << "  E" << i << ": " << val << "\n";
+        }
+    }
+
+    // Electrode Configuration
+    if (readBlock(0x2B, 3, buf)) {
+        std::cout << "\nElectrode Config (0x2B–0x2D):\n";
+        std::cout << "  ECR (0x2B): 0x" << std::hex << (int)buf[0] << std::dec << " → " << (buf[0] & 0x0F) << " electrodes enabled\n";
+        std::cout << "  CDC (0x2C): " << (int)buf[1] << " (charge current)\n";
+        std::cout << "  CDT (0x2D): " << (int)buf[2] << " (charge time)\n";
+    }
+
+    // Thresholds
+    if (readBlock(0x41, 24, buf)) {
+        std::cout << "\nTouch/Release Thresholds (0x41–0x5A):\n";
+        for (int i = 0; i < 12; ++i) {
+            uint8_t touch = buf[i * 2];
+            uint8_t release = buf[i * 2 + 1];
+            std::cout << "  E" << i << ": Touch=" << (int)touch << ", Release=" << (int)release << "\n";
+        }
+    }
+
+    // Filter & Autoconfig
+    if (readBlock(0x5B, 4, buf)) {
+        std::cout << "\nFilter/Debounce/Autoconfig (0x5B–0x5E):\n";
+        std::cout << "  Debounce (0x5B): " << (int)buf[0] << "\n";
+        std::cout << "  Filter Config (0x5C–0x5D): 0x" << std::hex << (int)buf[1] << " 0x" << (int)buf[2] << std::dec << "\n";
+        std::cout << "  Autoconfig (0x5E): " << (int)buf[3] << "\n";
+    }
+
+    std::cout << "\n";
+}
+
 void printUsage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n"
               << "Options:\n"
@@ -522,6 +591,13 @@ int main(int argc, char* argv[]) {
     const char* sensor1_touched_point = "grasp/sensor1/touched";
     const char* sensor1_vals_point = "grasp/sensor1/vals";
     
+    std::cout << "Registers for sensor 0" << std::endl;
+    dumpMPR121(cap0.i2c_fd);
+    
+    std::cout << "Registers for sensor 1" << std::endl;
+    dumpMPR121(cap1.i2c_fd);
+    
+    
     std::cout << "Starting data collection loop..." << std::endl;
     
     while (running.load()) {
@@ -534,7 +610,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "Timer read error: " << strerror(errno) << std::endl;
             break;
         }
-        
+
         // Check touch status changes
         uint16_t curr_touched0 = cap0.touched();
         if (curr_touched0 != last_touched0) {
@@ -553,27 +629,40 @@ int main(int argc, char* argv[]) {
             }
             last_touched1 = curr_touched1;
         }
-        
+
         // Send filtered data periodically (and test connection)
         if (client.testConnection()) {
             uint16_t filtered_data[NSENSORS];
-            
-            // Get sensor 0 data
-            for (int i = 0; i < NSENSORS; i++) {
-                filtered_data[i] = cap0.filteredData(i);
-            }
+	    uint8_t rawData[16];
+
+	    if (!cap0.readRegisters(0x04, rawData, sizeof(rawData))) {
+	      std::cerr << "Failed to read raw data\n";
+	      break;
+	    }
+
+	    for (int i = 0; i < 12; i+=2) {
+	      filtered_data[i/2] = rawData[i+4] | (rawData[i+1+4] << 8);
+	    }
+
             client.writeToDataserver(sensor0_vals_point, DSERV_SHORT,
                                    NSENSORS * sizeof(uint16_t), filtered_data);
             
+	    //            printDebugOutput(cap0, 0, filtered_data);
+
             // Get sensor 1 data
-            for (int i = 0; i < NSENSORS; i++) {
-                filtered_data[i] = cap1.filteredData(i);
-            }
+	    if (!cap1.readRegisters(0x04, rawData, sizeof(rawData))) {
+	      std::cerr << "Failed to read raw data\n";
+	      break;
+	    }
+	    
+	    for (int i = 0; i < 12; i+=2) {
+	      filtered_data[i/2] = rawData[i+4] | (rawData[i+1+4] << 8);
+	    }
+
             client.writeToDataserver(sensor1_vals_point, DSERV_SHORT,
                                    NSENSORS * sizeof(uint16_t), filtered_data);
                                    
-            printDebugOutput(cap0, 0);
-            printDebugOutput(cap1, 1);                       
+	    //            printDebugOutput(cap1, 1, filtered_data);                       
         }
     }
     
