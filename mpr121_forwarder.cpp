@@ -66,108 +66,42 @@ public:
     }
     
     bool begin(const char* i2c_device = "/dev/i2c-1") {
-        // Open I2C device
-        i2c_fd = open(i2c_device, O_RDWR);
-        if (i2c_fd < 0) {
-            std::cerr << "Failed to open I2C device: " << i2c_device << std::endl;
-            return false;
-        }
-        
-        // Set I2C slave address
-        if (ioctl(i2c_fd, I2C_SLAVE, i2c_addr) < 0) {
-            std::cerr << "Failed to set I2C slave address: 0x" << std::hex << i2c_addr << std::endl;
-            close(i2c_fd);
-            i2c_fd = -1;
-            return false;
-        }
-
- // Configure the mpr121 chip (mostly) as recommended in the AN3944 MPR121
-    // Quick Start Guide
-    // First, turn off all electrodes by zeroing out the Electrode Configuration
-    // register.
-    // If this one fails, it's unlikely any of the others will succeed.
-    writeRegister(0x5e, 0x00);
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-       
-    // Section A // AN3891
-    // Filtering when data is greater than baseline
-    // regs 0x2b-0x2e
-    //    uint8_t sectA[] = {0x01, 0x01, 0x00, 0x00}; // original
-    uint8_t sectA[] = {0x01, 0x01, 0x01, 0x01}; // AN3891
-    for (int i = 0; i < (int) sizeof(sectA); i++)
-		writeRegister(0x2b+i, sectA[i]);
-    
-    // Section B // AN3891
-    // Filtering when data is less than baseline
-    // regs 0x2f-0x32
-    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
-    for (int i = 0; i < (int) sizeof(sectB); i++)
-		writeRegister(0x2f+i, sectB[i]);
-    
-    // Section C
-    // Touch Threshold/Release registers, ELE0-ELE11
-    // regs 0x41-0x58
-    //                    __T_  __R_
-    uint8_t sectC[] =  {0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a,
-			0x0f, 0x0a};
-    for (int i = 0; i < (int) sizeof(sectC); i++)
-    	writeRegister(0x41+i, sectC[i]);
-    
-    // Filter configuration (added)
-    // reg 0x5c
-    //      uint8_t filterConfc = 0x00; // 6 samples, disable electrode charging
-    uint8_t filterConfc = 0x50; // 10 samples, 16ua electrode charging
-    writeRegister(0x5c, filterConfc);
-    
-    // Section D
-    // Filter configuration
-    // reg 0x5d
-    //    uint8_t filterConf = 0x04; //original
-    //    uint8_t filterConf = 0x24; // default on data sheet
-    uint8_t filterConf = 0x41; // 1 us charge/discharge time, 4 samples for 2nd folter, 2ms sample interval
-    //      uint8_t filterConf = 0x00; // no electrode charging, 4 samples for 2nd filter, 1 ms period
-    writeRegister(0x5d, filterConf);
-    
-    // Section F
-    // Autoconfiguration control registers
-    // regs 0x7b-0x7f
-    //    uint8_t sectF0 = 0x0b; // does autoconfig
-    uint8_t sectF0 = 0x08; //doesn't do autoconfig 
-    writeRegister(0x7b, sectF0);
-    
-    // Autoconfiguration target settings
-    uint8_t sectF1[] = {0x9c, 0x65, 0x8c};
-    for (int i = 0; i < (int) sizeof(sectF1); i++)
-      writeRegister(0x7d+i, sectF1[i]);
-    
-    // Section E - this one must be set last, and switches to run mode
-    // Enable the first 6 electrodes
-    // reg 0x5e
-    uint8_t eleConf = 0x86; // Enable first 6 electrodes in run mode with baseline tracking
-    writeRegister(0x5e, eleConf);
-    
-    // Settle time
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        
-	// Bit of debug testing
-	uint8_t ecr_val = readRegister8(MPR121_ECR);
-	std::cout << "ECR register: 0x" << std::hex << (int)ecr_val << std::endl;
+		// Open I2C device
+		i2c_fd = open(i2c_device, O_RDWR);
+		if (i2c_fd < 0) {
+			std::cerr << "Failed to open I2C device: " << i2c_device << std::endl;
+			return false;
+		}
+		
+		// Set I2C slave address
+		if (ioctl(i2c_fd, I2C_SLAVE, i2c_addr) < 0) {
+			std::cerr << "Failed to set I2C slave address: 0x" << std::hex << i2c_addr << std::endl;
+			close(i2c_fd);
+			i2c_fd = -1;
+			return false;
+		}
 	
-	// Check if auto-config worked
-	uint8_t baseline_0 = readRegister8(0x1E); // Baseline value for electrode 0
-	std::cout << "Baseline electrode 0: " << (int)baseline_0 << std::endl;
-
-        return true;
+		// Stop electrode scanning before config (same as your working script)
+		writeRegister(0x5E, 0x00);  // ECR register
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	
+		// Set touch/release thresholds for first 6 electrodes (same as your working script)
+		for (int i = 0; i < 6; ++i) {
+			writeRegister(0x41 + i * 2, 12);  // Touch threshold
+			writeRegister(0x42 + i * 2, 6);   // Release threshold
+		}
+	
+		// Enable first 6 electrodes (same as your working script, but only 6 instead of 12)
+		writeRegister(0x5E, 0x06);  // Enable 6 electrodes: 0x06 = 0b00000110
+		
+		// Settle time
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		
+		// Debug output
+		uint8_t ecr_val = readRegister8(0x5E);
+		std::cout << "ECR register: 0x" << std::hex << (int)ecr_val << std::endl;
+		
+		return true;
     }
     
     uint16_t touched() {
