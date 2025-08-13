@@ -145,10 +145,10 @@ public:
     }
     // soft reset
     writeRegister(MPR121_SOFTRESET, 0x63);
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
     writeRegister(MPR121_ECR, 0x0);
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
     setThresholds(MPR121_TOUCH_THRESHOLD_DEFAULT, MPR121_RELEASE_THRESHOLD_DEFAULT);
     writeRegister(MPR121_MHDR, 0x01);
