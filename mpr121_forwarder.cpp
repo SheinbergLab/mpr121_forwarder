@@ -87,28 +87,31 @@ public:
 		writeRegister(0x2B, 0x00);
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-		writeRegister(0x5E, 0x00);
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	
 		// Set touch/release thresholds for first 6 electrodes (same as your working script)
-		for (int i = 0; i < 6; ++i) {
+		for (int i = 0; i < 12; ++i) {
 			writeRegister(0x41 + i * 2, 12);  // Touch threshold
 			writeRegister(0x42 + i * 2, 6);   // Release threshold
 		}
 
-		writeRegister(0x5E, 0x0C);
+		writeRegister(file, 0x2C, 16); // Charge current
+		writeRegister(file, 0x2D, 1);  // Charge time
+
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		
 		// Enable first 6 electrodes 
-		writeRegister(0x2B, 0x06);
+		writeRegister(0x2B, 0x0C);
 		
 		// Settle time
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		
 		return true;
     }
-    
-    uint16_t touched() {
+
+  int get_fd() { return i2c_fd; }
+
+  uint16_t touched() {
         uint8_t t = readRegister8(MPR121_TOUCHSTATUS_L);
         uint16_t v = readRegister8(MPR121_TOUCHSTATUS_H);
         return ((v << 8) | t);
@@ -592,10 +595,10 @@ int main(int argc, char* argv[]) {
     const char* sensor1_vals_point = "grasp/sensor1/vals";
     
     std::cout << "Registers for sensor 0" << std::endl;
-    dumpMPR121(cap0.i2c_fd);
+    dumpMPR121(cap0.get_fd());
     
     std::cout << "Registers for sensor 1" << std::endl;
-    dumpMPR121(cap1.i2c_fd);
+    dumpMPR121(cap1.get_fd());
     
     
     std::cout << "Starting data collection loop..." << std::endl;
