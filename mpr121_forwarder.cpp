@@ -80,70 +80,122 @@ public:
             i2c_fd = -1;
             return false;
         }
+#if 0    
+        // Initialize MPR121
+        // Soft reset
+        writeRegister(0x80, 0x63);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        
+        // Configure touch and release thresholds
+        for (uint8_t i = 0; i < 12; i++) {
+            writeRegister(0x41 + 2 * i, 12);  // Touch threshold
+            writeRegister(0x42 + 2 * i, 6);   // Release threshold
+        }
+        
+        // Configure MPR121 settings
+        writeRegister(0x5B, 0x00); // MHD_R
+        writeRegister(0x5C, 0x01); // NHD_R
+        writeRegister(0x5D, 0x00); // NCL_R
+        writeRegister(0x5E, 0x00); // FDL_R
+        
+        writeRegister(0x5F, 0x01); // MHD_F
+        writeRegister(0x60, 0x01); // NHD_F
+        writeRegister(0x61, 0xFF); // NCL_F
+        writeRegister(0x62, 0x02); // FDL_F
+        
+        // Enable electrodes
+        writeRegister(MPR121_ECR, 0x8F); // Start with first 5 bits of baseline tracking
 
-		// Configure the mpr121 chip (mostly) as recommended in the AN3944 MPR121
-		// Quick Start Guide
-		// First, turn off all electrodes by zeroing out the Electrode Configuration
-		// register.
-		// If this one fails, it's unlikely any of the others will succeed.
-		writeRegister(0x5e, 0x00);
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		   
-		// Section A - Disable filtering when data is greater than baseline
-		// regs 0x2b-0x2e
-		uint8_t sectA[] = {0x00, 0x00, 0x00, 0x00}; // Disable all rising filters
-		for (int i = 0; i < (int) sizeof(sectA); i++)
-			writeRegister(0x2b+i, sectA[i]);
-		
-		// Section B - Disable filtering when data is less than baseline  
-		// regs 0x2f-0x32
-		uint8_t sectB[] = {0x00, 0x00, 0x00, 0x00}; // Disable all falling filters
-		for (int i = 0; i < (int) sizeof(sectB); i++)
-			writeRegister(0x2f+i, sectB[i]);
-		
-		// Section C
-		// Touch Threshold/Release registers, ELE0-ELE11
-		//   Here set very high to prevent touch 
-		// regs 0x41-0x58
-		//                    __T_  __R_
-		uint8_t sectC[] =  {0xff, 0xff};
-		for (int i = 0; i < 2*12; i++)
-			writeRegister(0x41+i, sectC[i%2]);
-		
-		// Filter configuration (minimal)
-		// reg 0x5c
-		uint8_t filterConfc = 0x10; // 1uA charging current, 0.5us charge time
-		writeRegister(0x5c, filterConfc);
-		
-		// Section D
-		// Filter configuration
-		// reg 0x5d
-		uint8_t filterConf = 0x00; // Min filtering: 0.5us charge, 4 samp, 1ms interval
-		writeRegister(0x5d, filterConf);
-		
-		// Section F
-		// Autoconfiguration control registers
-		// regs 0x7b-0x7f
-		//    uint8_t sectF0 = 0x0b; // does autoconfig
-		uint8_t sectF0 = 0x00; // disable autoconfig
-		writeRegister(0x7b, sectF0);
-		
-		// autoconfig target settings, but autoconfig is disabled
-		writeRegister(0x7c, 0x00);
-		writeRegister(0x7d, 0x00); 
-		writeRegister(0x7e, 0x00);
-		writeRegister(0x7f, 0x00);
-			
-		// Section E - this one must be set last, and switches to run mode
-		// Enable the first 6 electrodes
-		// reg 0x5e
-		uint8_t eleConf = 0x06; // Enable first 6 electrodes in run mode (no baseline)
-		writeRegister(0x5e, eleConf);
-		
-		// Settle time
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	  
-		return true;
+#else
+
+    // Configure the mpr121 chip (mostly) as recommended in the AN3944 MPR121
+    // Quick Start Guide
+    // First, turn off all electrodes by zeroing out the Electrode Configuration
+    // register.
+    // If this one fails, it's unlikely any of the others will succeed.
+    writeRegister(0x5e, 0x00);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+       
+    // Section A // AN3891
+    // Filtering when data is greater than baseline
+    // regs 0x2b-0x2e
+    //    uint8_t sectA[] = {0x01, 0x01, 0x00, 0x00}; // original
+    uint8_t sectA[] = {0x01, 0x01, 0x01, 0x01}; // AN3891
+	for (int i = 0; i < sizeof(sectA); i++)
+		writeRegister(0x2b+i, sectA[i]);
+    
+    // Section B // AN3891
+    // Filtering when data is less than baseline
+    // regs 0x2f-0x32
+    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
+    for (int i = 0; i < sizeof(sectB); i++)
+		writeRegister(0x2f+i, sectB[i]);
+    
+    // Section C
+    // Touch Threshold/Release registers, ELE0-ELE11
+    // regs 0x41-0x58
+    //                    __T_  __R_
+    uint8_t sectC[] =  {0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a,
+			0x0f, 0x0a};
+	for (int i = 0; i < sizeof(sectC); i++)
+    	writeRegister(0x41+i, sectC[i]);
+    
+    // Filter configuration (added)
+    // reg 0x5c
+    //      uint8_t filterConfc = 0x00; // 6 samples, disable electrode charging
+    uint8_t filterConfc = 0x50; // 10 samples, 16ua electrode charging
+    writeRegister(0x5c, filterConfc);
+    
+    // Section D
+    // Filter configuration
+    // reg 0x5d
+    //    uint8_t filterConf = 0x04; //original
+    //    uint8_t filterConf = 0x24; // default on data sheet
+    uint8_t filterConf = 0x41; // 1 us charge/discharge time, 4 samples for 2nd folter, 2ms sample interval
+    //      uint8_t filterConf = 0x00; // no electrode charging, 4 samples for 2nd filter, 1 ms period
+    writeRegister(0x5d, filterConf);
+    
+    // Section F
+    // Autoconfiguration control registers
+    // regs 0x7b-0x7f
+    //    uint8_t sectF0 = 0x0b; // does autoconfig
+    uint8_t sectF0 = 0x08; //doesn't do autoconfig 
+    writeRegister(0x7b, sectF0);
+    
+    // Autoconfiguration target settings
+    uint8_t sectF1[] = {0x9c, 0x65, 0x8c};
+    for (int i = 0; i < sizeof(sectF); i++)
+	    writeResgister(0x7d+i, sectF1[i]);
+    
+    // Section E - this one must be set last, and switches to run mode
+    // Enable the first 6 electrodes
+    // reg 0x5e
+    eleConf = 0x06; // Enable first 6 electrodes in run mode NO baseline tracking
+    writeRegister(0x5e, eleConf);
+    
+    // Settle time
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  
+#endif        
+	// Bit of debug testing
+	uint8_t ecr_val = readRegister8(MPR121_ECR);
+	std::cout << "ECR register: 0x" << std::hex << (int)ecr_val << std::endl;
+	
+	// Check if auto-config worked
+	uint8_t baseline_0 = readRegister8(0x1E); // Baseline value for electrode 0
+	std::cout << "Baseline electrode 0: " << (int)baseline_0 << std::endl;
+
+        return true;
     }
     
     uint16_t touched() {
