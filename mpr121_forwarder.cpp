@@ -80,11 +80,11 @@ public:
             i2c_fd = -1;
             return false;
         }
-        
+#if 0    
         // Initialize MPR121
         // Soft reset
         writeRegister(0x80, 0x63);
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
         
         // Configure touch and release thresholds
         for (uint8_t i = 0; i < 12; i++) {
@@ -105,7 +105,65 @@ public:
         
         // Enable electrodes
         writeRegister(MPR121_ECR, 0x8F); // Start with first 5 bits of baseline tracking
-        
+
+#else
+    // Initialize MPR121
+    // Soft reset
+    writeRegister(0x80, 0x63);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Increased delay
+    
+    // Stop the device first (disable electrodes)
+    writeRegister(MPR121_ECR, 0x00);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    
+    // Configure electrode filtering
+    writeRegister(0x2B, 0x01); // MHD_R (Must Have Data Rising)
+    writeRegister(0x2C, 0x01); // NHD_R (Noise Half Delta Rising) 
+    writeRegister(0x2D, 0x0E); // NCL_R (Noise Count Limit Rising)
+    writeRegister(0x2E, 0x00); // FDL_R (Filter Delay Limit Rising)
+    
+    writeRegister(0x2F, 0x01); // MHD_F (Must Have Data Falling)
+    writeRegister(0x30, 0x05); // NHD_F (Noise Half Delta Falling)
+    writeRegister(0x31, 0x01); // NCL_F (Noise Count Limit Falling) 
+    writeRegister(0x32, 0x00); // FDL_F (Filter Delay Limit Falling)
+    
+    // Configure electrode touch sensing
+    writeRegister(0x33, 0x00); // NHD_T (Noise Half Delta Touched)
+    writeRegister(0x34, 0x00); // NCL_T (Noise Count Limit Touched)
+    writeRegister(0x35, 0x00); // FDL_T (Filter Delay Limit Touched)
+    
+    // Configure Auto Config
+    writeRegister(0x7B, 0x0B); // Auto Config Control 0 (enable auto config)
+    writeRegister(0x7C, 0x9C); // Auto Config Control 1 
+    writeRegister(0x7D, 0x65); // Auto Config USL (Upper Side Limit)
+    writeRegister(0x7E, 0x8C); // Auto Config LSL (Lower Side Limit) 
+    writeRegister(0x7F, 0x9C); // Auto Config TL (Target Level)
+    
+    // Configure debounce settings
+    writeRegister(0x5B, 0x00); // Debounce Touch
+    writeRegister(0x5C, 0x00); // Debounce Release
+    
+    // Configure touch and release thresholds (more sensitive values)
+    for (uint8_t i = 0; i < 12; i++) {
+        writeRegister(0x41 + 2 * i, 6);  // Touch threshold (lowered from 12)
+        writeRegister(0x42 + 2 * i, 3);  // Release threshold (lowered from 6)
+    }
+    
+    // Set electrode configuration - enable first 12 electrodes with baseline tracking
+    writeRegister(MPR121_ECR, 0x8C); // Enable all 12 electrodes with baseline tracking
+    
+    // Give it time to settle
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+#endif        
+
+	// Bit of debug testing
+	uint8_t ecr_val = readRegister8(MPR121_ECR);
+	std::cout << "ECR register: 0x" << std::hex << (int)ecr_val << std::endl;
+	
+	// Check if auto-config worked
+	uint8_t baseline_0 = readRegister8(0x1E); // Baseline value for electrode 0
+	std::cout << "Baseline electrode 0: " << (int)baseline_0 << std::endl;
+
         return true;
     }
     
