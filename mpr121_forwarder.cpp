@@ -119,15 +119,16 @@ public:
     // Section A // AN3891
     // Filtering when data is greater than baseline
     // regs 0x2b-0x2e
-    //    uint8_t sectA[] = {0x01, 0x01, 0x00, 0x00}; // original
-    uint8_t sectA[] = {0x01, 0x01, 0x01, 0x01}; // AN3891
+    //    uint8_t sectA[] = {0x01, 0x01, 0x01, 0x01}; // original
+    uint8_t sectA[] = {0x00, 0x00, 0x00, 0x00}; // AN3891
     for (int i = 0; i < (int) sizeof(sectA); i++)
 		writeRegister(0x2b+i, sectA[i]);
     
     // Section B // AN3891
     // Filtering when data is less than baseline
     // regs 0x2f-0x32
-    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
+//    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
+    uint8_t sectB[] = {0x00, 0x00, 0x00, 0x00};
     for (int i = 0; i < (int) sizeof(sectB); i++)
 		writeRegister(0x2f+i, sectB[i]);
     
