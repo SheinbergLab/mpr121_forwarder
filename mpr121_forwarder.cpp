@@ -30,6 +30,7 @@
 #define MPR121_FILTDATA_0L 0x04
 #define MPR121_CONFIG2 0x5D
 #define MPR121_ECR 0x5E
+#define MPR121_ELEDATA_0L 0x5F
 
 // Dataserver configuration
 #define DSERV_PORT 4620
@@ -80,33 +81,6 @@ public:
             i2c_fd = -1;
             return false;
         }
-#if 0    
-        // Initialize MPR121
-        // Soft reset
-        writeRegister(0x80, 0x63);
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        
-        // Configure touch and release thresholds
-        for (uint8_t i = 0; i < 12; i++) {
-            writeRegister(0x41 + 2 * i, 12);  // Touch threshold
-            writeRegister(0x42 + 2 * i, 6);   // Release threshold
-        }
-        
-        // Configure MPR121 settings
-        writeRegister(0x5B, 0x00); // MHD_R
-        writeRegister(0x5C, 0x01); // NHD_R
-        writeRegister(0x5D, 0x00); // NCL_R
-        writeRegister(0x5E, 0x00); // FDL_R
-        
-        writeRegister(0x5F, 0x01); // MHD_F
-        writeRegister(0x60, 0x01); // NHD_F
-        writeRegister(0x61, 0xFF); // NCL_F
-        writeRegister(0x62, 0x02); // FDL_F
-        
-        // Enable electrodes
-        writeRegister(MPR121_ECR, 0x8F); // Start with first 5 bits of baseline tracking
-
-#else
 
     // Configure the mpr121 chip (mostly) as recommended in the AN3944 MPR121
     // Quick Start Guide
@@ -127,7 +101,7 @@ public:
     // Section B // AN3891
     // Filtering when data is less than baseline
     // regs 0x2f-0x32
-//    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
+	//    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
     uint8_t sectB[] = {0x00, 0x00, 0x00, 0x00};
     for (int i = 0; i < (int) sizeof(sectB); i++)
 		writeRegister(0x2f+i, sectB[i]);
@@ -186,18 +160,6 @@ public:
     
     // Settle time
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  
-#endif        
-	// Bit of debug testing
-	uint8_t ecr_val = readRegister8(MPR121_ECR);
-	std::cout << "ECR register: 0x" << std::hex << (int)ecr_val << std::endl;
-	
-	// Check if auto-config worked
-	uint8_t baseline_0 = readRegister8(0x1E); // Baseline value for electrode 0
-	std::cout << "Baseline electrode 0: " << (int)baseline_0 << std::endl;
-
-        return true;
-    }
     
     uint16_t touched() {
         uint8_t t = readRegister8(MPR121_TOUCHSTATUS_L);
@@ -208,6 +170,11 @@ public:
     uint16_t filteredData(uint8_t t) {
         if (t > 12) return 0;
         return readRegister16(MPR121_FILTDATA_0L + t * 2);
+    }
+    
+    uint16_t rawData(uint8_t t) {
+        if (t > 12) return 0;
+        return readRegister16(MPR121_ELEDATA_0L + t * 2);
     }
     
 private:
@@ -644,14 +611,16 @@ int main(int argc, char* argv[]) {
             
             // Get sensor 0 data
             for (int i = 0; i < NSENSORS; i++) {
-                filtered_data[i] = cap0.filteredData(i);
+                //filtered_data[i] = cap0.filteredData(i);
+                filtered_data[i] = cap0.rawData(i);
             }
             client.writeToDataserver(sensor0_vals_point, DSERV_SHORT,
                                    NSENSORS * sizeof(uint16_t), filtered_data);
             
             // Get sensor 1 data
             for (int i = 0; i < NSENSORS; i++) {
-                filtered_data[i] = cap1.filteredData(i);
+                //filtered_data[i] = cap1.filteredData(i);
+                filtered_data[i] = cap1.rawData(i);
             }
             client.writeToDataserver(sensor1_vals_point, DSERV_SHORT,
                                    NSENSORS * sizeof(uint16_t), filtered_data);
