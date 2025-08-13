@@ -121,14 +121,14 @@ public:
     // regs 0x2b-0x2e
     //    uint8_t sectA[] = {0x01, 0x01, 0x00, 0x00}; // original
     uint8_t sectA[] = {0x01, 0x01, 0x01, 0x01}; // AN3891
-	for (int i = 0; i < sizeof(sectA); i++)
+    for (int i = 0; i < (int) sizeof(sectA); i++)
 		writeRegister(0x2b+i, sectA[i]);
     
     // Section B // AN3891
     // Filtering when data is less than baseline
     // regs 0x2f-0x32
     uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
-    for (int i = 0; i < sizeof(sectB); i++)
+    for (int i = 0; i < (int) sizeof(sectB); i++)
 		writeRegister(0x2f+i, sectB[i]);
     
     // Section C
@@ -147,7 +147,7 @@ public:
 			0x0f, 0x0a,
 			0x0f, 0x0a,
 			0x0f, 0x0a};
-	for (int i = 0; i < sizeof(sectC); i++)
+    for (int i = 0; i < (int) sizeof(sectC); i++)
     	writeRegister(0x41+i, sectC[i]);
     
     // Filter configuration (added)
@@ -174,13 +174,13 @@ public:
     
     // Autoconfiguration target settings
     uint8_t sectF1[] = {0x9c, 0x65, 0x8c};
-    for (int i = 0; i < sizeof(sectF); i++)
-	    writeResgister(0x7d+i, sectF1[i]);
+    for (int i = 0; i < (int) sizeof(sectF1); i++)
+	    writeRegister(0x7d+i, sectF1[i]);
     
     // Section E - this one must be set last, and switches to run mode
     // Enable the first 6 electrodes
     // reg 0x5e
-    eleConf = 0x06; // Enable first 6 electrodes in run mode NO baseline tracking
+    uint8_t eleConf = 0x06; // Enable first 6 electrodes in run mode NO baseline tracking
     writeRegister(0x5e, eleConf);
     
     // Settle time
