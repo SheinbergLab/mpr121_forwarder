@@ -14,6 +14,28 @@
 #include <netdb.h>
 #include <errno.h>
 
+/*!
+ *  Borrowed extensively from
+ *    @file Adafruit_MPR121.h
+ *
+ *  This is a library for the MPR121 12-Channel Capacitive Sensor
+ *
+ *  Designed specifically to work with the MPR121 board.
+ *
+ *  Pick one up today in the adafruit shop!
+ *  ------> https://www.adafruit.com/product/1982
+ *
+ *  These sensors use I2C to communicate, 2+ pins are required to interface
+ *
+ *  Adafruit invests time and resources providing this open source code,
+ *  please support Adafruit andopen-source hardware by purchasing products
+ *  from Adafruit!
+ *
+ *  Limor Fried/Ladyada (Adafruit Industries).
+ *
+ *  BSD license, all text above must be included in any redistribution
+ */
+ 
 // I2C includes for Linux
 #include <sys/ioctl.h>
 #include <linux/i2c-dev.h>
@@ -24,13 +46,52 @@
 #define NSENSORS 6
 
 // MPR121 Constants
-#define MPR121_I2CADDR_DEFAULT 0x5A
-#define MPR121_TOUCHSTATUS_L 0x00
-#define MPR121_TOUCHSTATUS_H 0x01
-#define MPR121_FILTDATA_0L 0x04
-#define MPR121_CONFIG2 0x5D
-#define MPR121_ECR 0x5E
-#define MPR121_ELEDATA_0L 0x5F
+#define MPR121_TOUCH_THRESHOLD_DEFAULT 12  ///< default touch threshold value
+#define MPR121_RELEASE_THRESHOLD_DEFAULT 6 ///< default relese threshold value
+
+/*!
+ *  Device register map
+ */
+enum {
+  MPR121_TOUCHSTATUS_L = 0x00,
+  MPR121_TOUCHSTATUS_H = 0x01,
+  MPR121_FILTDATA_0L = 0x04,
+  MPR121_FILTDATA_0H = 0x05,
+  MPR121_BASELINE_0 = 0x1E,
+  MPR121_MHDR = 0x2B,
+  MPR121_NHDR = 0x2C,
+  MPR121_NCLR = 0x2D,
+  MPR121_FDLR = 0x2E,
+  MPR121_MHDF = 0x2F,
+  MPR121_NHDF = 0x30,
+  MPR121_NCLF = 0x31,
+  MPR121_FDLF = 0x32,
+  MPR121_NHDT = 0x33,
+  MPR121_NCLT = 0x34,
+  MPR121_FDLT = 0x35,
+
+  MPR121_TOUCHTH_0 = 0x41,
+  MPR121_RELEASETH_0 = 0x42,
+  MPR121_DEBOUNCE = 0x5B,
+  MPR121_CONFIG1 = 0x5C,
+  MPR121_CONFIG2 = 0x5D,
+  MPR121_CHARGECURR_0 = 0x5F,
+  MPR121_CHARGETIME_1 = 0x6C,
+  MPR121_ECR = 0x5E,
+  MPR121_AUTOCONFIG0 = 0x7B,
+  MPR121_AUTOCONFIG1 = 0x7C,
+  MPR121_UPLIMIT = 0x7D,
+  MPR121_LOWLIMIT = 0x7E,
+  MPR121_TARGETLIMIT = 0x7F,
+
+  MPR121_GPIODIR = 0x76,
+  MPR121_GPIOEN = 0x77,
+  MPR121_GPIOSET = 0x78,
+  MPR121_GPIOCLR = 0x79,
+  MPR121_GPIOTOGGLE = 0x7A,
+
+  MPR121_SOFTRESET = 0x80,
+};
 
 // Dataserver configuration
 #define DSERV_PORT 4620
@@ -81,81 +142,84 @@ public:
       i2c_fd = -1;
       return false;
     }
-    
-    // Configure the mpr121 chip (mostly) as recommended in the AN3944 MPR121
-    // Quick Start Guide
-    
-    // Soft reset first
-    writeRegister(0x80, 0x63);
+    // soft reset
+    writeRegister(MPR121_SOFTRESET, 0x63);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     
-    // First, turn off all electrodes by zeroing out the Electrode Configuration
-    // register.
-    // If this one fails, it's unlikely any of the others will succeed.
-    writeRegister(0x5e, 0x00);
+    writeRegister(MPR121_ECR, 0x0);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     
-    // Section A // AN3891
-    // Filtering when data is greater than baseline
-    // regs 0x2b-0x2e
-    //    uint8_t sectA[] = {0x01, 0x01, 0x01, 0x01}; // original
-    uint8_t sectA[] = {0x01, 0x01, 0x00, 0x00}; // AN3891
-    for (int i = 0; i < (int) sizeof(sectA); i++)
-      writeRegister(0x2b+i, sectA[i]);
+    setThresholds(MPR121_TOUCH_THRESHOLD_DEFAULT, MPR121_RELEASE_THRESHOLD_DEFAULT);
+    writeRegister(MPR121_MHDR, 0x01);
+    writeRegister(MPR121_NHDR, 0x01);
+    writeRegister(MPR121_NCLR, 0x0E);
+    writeRegister(MPR121_FDLR, 0x00);
+  
+    writeRegister(MPR121_MHDF, 0x01);
+	writeRegister(MPR121_NHDF, 0x05);
+    writeRegister(MPR121_NCLF, 0x01);
+    writeRegister(MPR121_FDLF, 0x00);
+
+    writeRegister(MPR121_NHDT, 0x00);
+    writeRegister(MPR121_NCLT, 0x00);
+    writeRegister(MPR121_FDLT, 0x00);
+
+    writeRegister(MPR121_DEBOUNCE, 0);
+    writeRegister(MPR121_CONFIG1, 0x10); // default, 16uA charge current
+    writeRegister(MPR121_CONFIG2, 0x20); // 0.5uS encoding, 1ms period
+
+    setAutoconfig(false);
     
-    // Section B // AN3891
-    // Filtering when data is less than baseline
-    // regs 0x2f-0x32
-    //    uint8_t sectB[] = {0x01, 0x01, 0xff, 0x02};
-    uint8_t sectB[] = {0x01, 0x01, 0x01, 0x00};
-    for (int i = 0; i < (int) sizeof(sectB); i++)
-      writeRegister(0x2f+i, sectB[i]);
-    
-    // Section C
-    // Touch Threshold/Release registers, ELE0-ELE11
-    // regs 0x41-0x58
-    //                    __T_  __R_
-	 uint8_t sectC[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                        0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                        0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                        0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-    for (int i = 0; i < (int) sizeof(sectC); i++)
-      writeRegister(0x41+i, sectC[i]);
-    
-    // Proper charge settings for measurements
-    // reg 0x5c - Charge Discharge Time Configuration
-    writeRegister(0x5c, 0x10); // 1uA charging current, 0.5us charge time
-     
-    // Section D
-    // Filter configuration
-    // reg 0x5d
-    //    uint8_t filterConf = 0x04; //original
-    //    uint8_t filterConf = 0x24; // default on data sheet
-    uint8_t filterConf = 0x20;
-    //      uint8_t filterConf = 0x00; // no electrode charging, 4 samples for 2nd filter, 1 ms period
-    writeRegister(0x5d, filterConf);
-    
-    // Section F
-    // Autoconfiguration control registers
-    // Disable autoconfiguration completely
-    writeRegister(0x7b, 0x00);
-    writeRegister(0x7c, 0x00);
-    writeRegister(0x7d, 0x00); 
-    writeRegister(0x7e, 0x00);
-    writeRegister(0x7f, 0x00);
-    
-    // Section E - this one must be set last, and switches to run mode
-    // Enable the first 6 electrodes
-    // reg 0x5e
-    uint8_t eleConf = 0x06; // Enable first 6 electrodes in run mode NO baseline tracking
-    writeRegister(0x5e, eleConf);
-    
+    // enable X electrodes = start MPR121
+    // CL Calibration Lock: B10 = 5 bits for baseline tracking
+    // ELEPROX_EN  proximity: disabled
+    // ELE_EN Electrode Enable:  amount of electrodes running (12)
+    byte ECR_SETTING = 0b10000000 + 12;
+    writeRegister(MPR121_ECR, ECR_SETTING); // start with above ECR setting
+  
     // Settle time
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     return true;
   }
   
+  void setAutoconfig(boolean autoconfig) {
+	  // register map at
+	  // https://www.nxp.com/docs/en/data-sheet/MPR121.pdf#page=17&zoom=auto,-416,747
+	  if (autoconfig) {
+		// recommend settings found at
+		// https://www.nxp.com/docs/en/application-note/AN3889.pdf#page=9&zoom=310,-42,373
+		// FFI (First Filter Iterations) same as FFI in CONFIG1
+		// FFI           → 00 Sets samples taken to 6 (Default)
+		// RETRY
+		// RETRY
+		// BVA same as CL in ECR
+		// BVA same as CL in ECR
+		// ARE Auto-Reconfiguration Enable
+		// ACE Auto-Configuration Enable
+		// 0x0B == 0b00001011
+		writeRegister(MPR121_AUTOCONFIG0, 0b00001011);
+	
+		// details on values
+		// https://www.nxp.com/docs/en/application-note/AN3889.pdf#page=7&zoom=310,-42,792
+		// correct values for Vdd = 3.3V
+		writeRegister(MPR121_UPLIMIT, 200);     // ((Vdd - 0.7)/Vdd) * 256
+		writeRegister(MPR121_TARGETLIMIT, 180); // UPLIMIT * 0.9
+		writeRegister(MPR121_LOWLIMIT, 130);    // UPLIMIT * 0.65
+	  } else {
+		// really only disable ACE.
+		writeRegister(MPR121_AUTOCONFIG0, 0b00001010);
+	  }
+	}
+  
+  void setThresholds(uint8_t touch, uint8_t release) {
+	  // set all thresholds (the same)
+	  for (uint8_t i = 0; i < 12; i++) {
+		writeRegister(MPR121_TOUCHTH_0 + 2 * i, touch);
+		writeRegister(MPR121_RELEASETH_0 + 2 * i, release);
+	  }
+	}
+
   uint16_t touched() {
     uint8_t t = readRegister8(MPR121_TOUCHSTATUS_L);
     uint16_t v = readRegister8(MPR121_TOUCHSTATUS_H);
