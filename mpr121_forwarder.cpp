@@ -46,6 +46,7 @@
 #define NSENSORS 6
 
 // MPR121 Constants
+#define MPR121_I2CADDR_DEFAULT 0x5A        ///< default I2C address
 #define MPR121_TOUCH_THRESHOLD_DEFAULT 12  ///< default touch threshold value
 #define MPR121_RELEASE_THRESHOLD_DEFAULT 6 ///< default relese threshold value
 
@@ -174,7 +175,7 @@ public:
     // CL Calibration Lock: B10 = 5 bits for baseline tracking
     // ELEPROX_EN  proximity: disabled
     // ELE_EN Electrode Enable:  amount of electrodes running (12)
-    byte ECR_SETTING = 0b10000000 + 12;
+    uint8_t ECR_SETTING = 0b10000000 + 12;
     writeRegister(MPR121_ECR, ECR_SETTING); // start with above ECR setting
   
     // Settle time
@@ -183,7 +184,7 @@ public:
     return true;
   }
   
-  void setAutoconfig(boolean autoconfig) {
+  void setAutoconfig(bool autoconfig) {
 	  // register map at
 	  // https://www.nxp.com/docs/en/data-sheet/MPR121.pdf#page=17&zoom=auto,-416,747
 	  if (autoconfig) {
@@ -229,11 +230,6 @@ public:
   uint16_t filteredData(uint8_t t) {
     if (t > 12) return 0;
     return readRegister16(MPR121_FILTDATA_0L + t * 2);
-  }
-  
-  uint16_t rawData(uint8_t t) {
-    if (t > 12) return 0;
-    return readRegister16(MPR121_ELEDATA_0L + t * 2);
   }
   
 private:
@@ -671,7 +667,7 @@ int main(int argc, char* argv[]) {
             // Get sensor 0 data
             for (int i = 0; i < NSENSORS; i++) {
                 //filtered_data[i] = cap0.filteredData(i);
-                filtered_data[i] = cap0.rawData(i);
+                filtered_data[i] = cap0.filteredData(i);
             }
             client.writeToDataserver(sensor0_vals_point, DSERV_SHORT,
                                    NSENSORS * sizeof(uint16_t), filtered_data);
@@ -679,7 +675,7 @@ int main(int argc, char* argv[]) {
             // Get sensor 1 data
             for (int i = 0; i < NSENSORS; i++) {
                 //filtered_data[i] = cap1.filteredData(i);
-                filtered_data[i] = cap1.rawData(i);
+                filtered_data[i] = cap1.filteredData(i);
             }
             client.writeToDataserver(sensor1_vals_point, DSERV_SHORT,
                                    NSENSORS * sizeof(uint16_t), filtered_data);
